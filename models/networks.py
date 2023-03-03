@@ -76,6 +76,18 @@ class NGP(nn.Module):
                 }
             )
 
+        self.normal_net= \
+            tcnn.Network(
+                n_input_dims=32, n_output_dims=3,
+                network_config={
+                    "otype": "FullyFusedMLP",
+                    "activation": "ReLU",
+                    "output_activation": self.rgb_act,
+                    "n_neurons": 64,
+                    "n_hidden_layers": 2,
+                }
+            )
+
         if self.rgb_act == 'None': # rgb_net output is log-radiance
             for i in range(3): # independent tonemappers for r,g,b
                 tonemapper_net = \
@@ -144,7 +156,9 @@ class NGP(nn.Module):
         sigmas, h = self.density(x, return_feat=True)
         d = d/torch.norm(d, dim=1, keepdim=True)
         d = self.dir_encoder((d+1)/2)
-        rgbs = self.rgb_net(torch.cat([d, h], 1))
+        x = torch.cat([d, h], dim=1)
+        rgbs = self.rgb_net(x)
+        normals = torch.nn.functional.normalize(self.normal_net(x), dim=1, p=2)
 
         if self.rgb_act == 'None': # rgbs is log-radiance
             if kwargs.get('output_radiance', False): # output HDR map
@@ -152,7 +166,7 @@ class NGP(nn.Module):
             else: # convert to LDR using tonemapper networks
                 rgbs = self.log_radiance_to_rgb(rgbs, **kwargs)
 
-        return sigmas, rgbs
+        return sigmas, rgbs, normals
 
     @torch.no_grad()
     def get_all_cells(self):

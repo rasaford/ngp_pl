@@ -3,6 +3,7 @@ from .custom_functions import \
     RayAABBIntersector, RayMarcher, VolumeRenderer
 from einops import rearrange
 import vren
+from torch.autograd import grad
 
 MAX_SAMPLES = 1024
 NEAR_DISTANCE = 0.01
@@ -49,7 +50,7 @@ def __render_rays_test(model, rays_o, rays_d, hits_t, **kwargs):
     Render rays by
 
     while (a ray hasn't converged)
-        1. Move each ray to its next occupied @N_samples (initially 1) samples 
+        1. Move each ray to its next occupied @N_samples (initially 1) samples
            and evaluate the properties (sigmas, rgbs) there
         2. Composite the result to output; if a ray has transmittance lower
            than a threshold, mark this ray as converged and stop marching it.
@@ -93,7 +94,7 @@ def __render_rays_test(model, rays_o, rays_d, hits_t, **kwargs):
 
         sigmas = torch.zeros(len(xyzs), device=device)
         rgbs = torch.zeros(len(xyzs), 3, device=device)
-        sigmas[valid_mask], _rgbs = model(xyzs[valid_mask], dirs[valid_mask], **kwargs)
+        sigmas[valid_mask], _rgbs, _normals = model(xyzs[valid_mask], dirs[valid_mask], **kwargs)
         rgbs[valid_mask] = _rgbs.float()
         sigmas = rearrange(sigmas, '(n1 n2) -> n1 n2', n2=N_samples)
         rgbs = rearrange(rgbs, '(n1 n2) c -> n1 n2 c', n2=N_samples)
@@ -142,12 +143,21 @@ def __render_rays_train(model, rays_o, rays_d, hits_t, **kwargs):
     for k, v in kwargs.items(): # supply additional inputs, repeated per ray
         if isinstance(v, torch.Tensor):
             kwargs[k] = torch.repeat_interleave(v[rays_a[:, 0]], rays_a[:, 2], 0)
-    sigmas, rgbs = model(xyzs, dirs, **kwargs)
+
+    xyzs.requires_grad = True
+    results["sigmas"], rgbs, results["normals"] = model(xyzs, dirs, **kwargs)
 
     (results['vr_samples'], results['opacity'],
     results['depth'], results['rgb'], results['ws']) = \
-        VolumeRenderer.apply(sigmas, rgbs.contiguous(), results['deltas'], results['ts'],
+        VolumeRenderer.apply(results["sigmas"], rgbs.contiguous(), results['deltas'], results['ts'],
                              rays_a, kwargs.get('T_threshold', 1e-4))
+
+    # compute the density normals
+    gradient = torch.ones_like(results["sigmas"])
+    results["sigmas"].backward(gradient, retain_graph=True)
+    results["density_normals"] = -torch.nn.functional.normalize(xyzs.grad, dim=1, p=2)
+
+
     results['rays_a'] = rays_a
 
     if exp_step_factor==0: # synthetic

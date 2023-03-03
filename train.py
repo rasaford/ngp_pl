@@ -25,7 +25,7 @@ from losses import NeRFLoss
 
 # metrics
 from torchmetrics import (
-    PeakSignalNoiseRatio, 
+    PeakSignalNoiseRatio,
     StructuralSimilarityIndexMeasure
 )
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
@@ -181,6 +181,8 @@ class NeRFSystem(LightningModule):
         # volume rendering samples per ray (stops marching when transmittance drops below 1e-4)
         self.log('train/vr_s', results['vr_samples']/len(batch['rgb']), True)
         self.log('train/psnr', self.train_psnr, True)
+        if "normal" in loss_d:
+            self.log("Ro", loss_d["normal"], True)
 
         return loss
 

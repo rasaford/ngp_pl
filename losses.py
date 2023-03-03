@@ -38,11 +38,12 @@ class DistortionLoss(torch.autograd.Function):
 
 
 class NeRFLoss(nn.Module):
-    def __init__(self, lambda_opacity=1e-3, lambda_distortion=1e-3):
+    def __init__(self, lambda_opacity=1e-3, lambda_distortion=1e-3, lambda_normal=3e-4):
         super().__init__()
 
         self.lambda_opacity = lambda_opacity
         self.lambda_distortion = lambda_distortion
+        self.lambda_normal = lambda_normal
 
     def forward(self, results, target, **kwargs):
         d = {}
@@ -57,4 +58,10 @@ class NeRFLoss(nn.Module):
                 DistortionLoss.apply(results['ws'], results['deltas'],
                                      results['ts'], results['rays_a'])
 
+        # normal loss
+        if "normals" in results and "density_normals" in results:
+            d["normal"] = self.lambda_normal * torch.sum(
+                results["sigmas"].reshape(-1, 1)
+                * (results["normals"] - results["density_normals"]) ** 2
+            )
         return d
