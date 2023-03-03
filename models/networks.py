@@ -102,7 +102,9 @@ class NGP(nn.Module):
         """
         x = (x-self.xyz_min)/(self.xyz_max-self.xyz_min)
         h = self.xyz_encoder(x)
-        sigmas = TruncExp.apply(h[:, 0])
+        # use softplus instead of exp for activation to stay within the float
+        # range.
+        sigmas = torch.nn.functional.softplus(h[:, 0])
         if return_feat: return sigmas, h
         return sigmas
 
@@ -156,7 +158,7 @@ class NGP(nn.Module):
     def get_all_cells(self):
         """
         Get all cells from the density grid.
-        
+
         Outputs:
             cells: list (of length self.cascades) of indices and coords
                    selected at each cascade
@@ -171,7 +173,7 @@ class NGP(nn.Module):
         """
         Sample both M uniform and occupied cells (per cascade)
         occupied cells are sample from cells with density > @density_threshold
-        
+
         Outputs:
             cells: list (of length self.cascades) of indices and coords
                    selected at each cascade
